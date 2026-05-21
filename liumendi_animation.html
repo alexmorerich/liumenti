@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<title>六门堤水利动画 · 汉代南阳郡精确地图</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{
+  background:#f5f0e0;
+  font-family:"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+  color:#1a1208;
+}
+#wrap{max-width:1160px;margin:0 auto;padding:16px 12px 24px;}
+h1{font-size:22px;font-weight:700;margin-bottom:4px;color:#3a1e00;}
+.sub{font-size:13px;color:#7a6040;line-height:1.7;margin-bottom:12px;}
+.card{background:#fff;border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.09);overflow:hidden;border:1px solid rgba(0,0,0,.07);}
+.toolbar{
+  display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+  padding:10px 14px;border-bottom:1px solid rgba(0,0,0,.08);background:#fffdf6;
+}
+button,select{
+  border:1px solid rgba(0,0,0,.14);border-radius:9px;padding:6px 13px;
+  background:#fff;color:#1a1208;font-size:14px;cursor:pointer;font-family:inherit;
+}
+button:hover{border-color:rgba(0,0,0,.3);}
+.badge{margin-left:auto;font-size:13px;color:#8a6a30;font-weight:600;}
+canvas{display:block;width:100%;}
+.leg{
+  display:flex;flex-wrap:wrap;gap:8px 20px;
+  padding:10px 14px;border-top:1px solid rgba(0,0,0,.08);
+  background:#fffdf6;font-size:13px;color:#334155;
+}
+.li{display:flex;align-items:center;gap:6px;}
+.sq{width:14px;height:10px;border-radius:3px;}
+.note{margin-top:10px;font-size:12px;color:#9a8060;line-height:1.7;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <h1>六门堤如何灌溉周边农田 · 汉代南阳郡精确地理动画</h1>
+  <div class="sub">
+    基于汉代实测地图坐标（111.55–112.65°E，32.25–33.05°N）。
+    穰县（今邓州市）西侧湍水上的<strong>六门堤</strong>，
+    为南阳太守召信臣约公元前20年主持修建，
+    引湍水灌溉穰、新野等县农田逾万顷，史称"穰、新野最为膏腴"。
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <button id="btPlay">暂停</button>
+      <button id="btReplay">重播</button>
+      <select id="selMode">
+        <option value="normal">正常年景</option>
+        <option value="flood">丰水期 / 分洪</option>
+        <option value="dry">枯水期 / 保灌</option>
+      </select>
+      <div class="badge" id="stageLabel">阶段：拦河抬水</div>
+    </div>
+    <canvas id="cvs" width="1100" height="680"></canvas>
+    <div class="leg">
+      <div class="li"><div class="sq" style="background:#3b8fd4"></div>湍水（湍河）主河道</div>
+      <div class="li"><div class="sq" style="background:#5aafee"></div>引水干渠 / 支渠</div>
+      <div class="li"><div class="sq" style="background:#c8973d"></div>堤坝 / 渠堤</div>
+      <div class="li"><div class="sq" style="background:#6b7885"></div>六门石闸</div>
+      <div class="li"><div class="sq" style="background:#7fc05a"></div>农田灌区（膏腴之地）</div>
+      <div class="li"><div class="sq" style="background:#d9c3a3"></div>汉代县城</div>
+      <div class="li"><div class="sq" style="background:#ef6a4a"></div>分洪 / 泄水</div>
+    </div>
+  </div>
+  <div class="note">
+    说明：地理位置基于汉代南阳郡地图校准。穰县=今邓州市区；涅阳=今穰东镇；
+    山都=今构林镇；新野=今新野县；六门堤遗址在今彭桥镇一带（湍水西岸，穰城上游约15km处）。
+    动画每轮约22秒自动循环，可切换丰水/枯水模式。
+  </div>
+</div>
+
+<script>
+// ── Geo projection ─────────────────────────────────────────────────────────
+// Map view: 111.55°E–112.65°E, 33.05°N–32.25°N
+const LON0=111.55, LON1=112.65;
+const LAT0=33.05,  LAT1=32.25;  // LAT0 = north top, LAT1 = south bottom
+const CW=1100, CH=680;
+
+function gx(lon){ return (lon-LON0)/(LON1-LON0)*CW; }
+function gy(lat){ return (LAT0-lat)/(LAT0-LAT1)*CH; }
+function G(lon,lat){ return {x:gx(lon),y:gy(lat)}; }
+
+// ── Han-dynasty city registry ──────────────────────────────────────────────
+const CITIES = [
+  { name:'穰县', sub:'今邓州市区', lon:112.09, lat:32.68, major:true },
+  { name:'涅阳县', sub:'今穰东镇', lon:112.25, lat:32.75, major:false },
+  { name:'山都县', sub:'今构林镇', lon:112.22, lat:32.50, major:false },
+  { name:'新野县', sub:'今新野县', lon:112.36, lat:32.52, major:true },
+  { name:'冠军县', sub:'今邓州北', lon:112.10, lat:32.87, major:false },
+  { name:'安众县', sub:'今新野东', lon:112.48, lat:32.55, major:false },
+  { name:'朝阳县', sub:'今邓州南', lon:112.14, lat:32.43, major:false },
+];
+
+// ── River: 湍水 (Tuan River) ───────────────────────────────────────────────
+// Flows NW→SE, passing through 六门堤 site then east of 穰县
+const TUANHE = [
+  [111.68,33.02],[111.78,32.94],[111.88,32.82],[111.91,32.73],
+  [111.95,32.68],[112.02,32.62],[112.10,32.55],[112.22,32.44],
+  [112.35,32.34],[112.45,32.28]
+];
+
+// 六门堤 location on 湍水
+const DIKE_LON = 111.91, DIKE_LAT = 32.73;
+
+// ── Canal network from 六门堤 ──────────────────────────────────────────────
+// Main east canal → 穰县
+const CANAL_MAIN = [
+  [111.91,32.73],[111.98,32.72],[112.04,32.71],[112.09,32.68]
+];
+// North branch: 穰县 → 涅阳 → 冠军方向
+const CANAL_N = [
+  [112.09,32.68],[112.14,32.73],[112.20,32.75],[112.25,32.75]
+];
+// South branch: 穰县 → 山都 → 新野
+const CANAL_S = [
+  [112.09,32.68],[112.16,32.60],[112.22,32.55],[112.22,32.50],[112.36,32.52]
+];
+// Small NW branch feeding upper fields north of dike
+const CANAL_NW = [
+  [111.91,32.73],[111.92,32.79],[111.96,32.83],[112.02,32.85],[112.10,32.87]
+];
+// Flood spill channel (goes back into lower river NW)
+const FLOOD_SPILL = [
+  [111.91,32.73],[111.86,32.78],[111.80,32.84],[111.72,32.90]
+];
+
+// ── Irrigation fields ──────────────────────────────────────────────────────
+const FIELDS = [
+  { cx:112.09,cy:32.68, rlon:0.06,rlat:0.04, label:'穰县灌区', idx:0 },
+  { cx:112.25,cy:32.75, rlon:0.05,rlat:0.03, label:'涅阳灌区', idx:1 },
+  { cx:112.36,cy:32.52, rlon:0.07,rlat:0.04, label:'新野灌区', idx:2 },
+  { cx:112.22,cy:32.50, rlon:0.04,rlat:0.03, label:'山都灌区', idx:3 },
+  { cx:112.10,cy:32.87, rlon:0.04,rlat:0.03, label:'冠军灌区', idx:4 },
+];
+
+// Detention pond / 陂 positions
+const PONDS = [
+  { lon:112.03, lat:32.70 },
+  { lon:112.20, lat:32.63 },
+  { lon:112.30, lat:32.58 },
+];
+
+// ── Mountain backdrop ──────────────────────────────────────────────────────
+const MOUNTS = [
+  { name:'伏牛山', cx:111.65, cy:32.90, rlon:0.12, rlat:0.10 },
+  { name:'秦岭余脉', cx:111.60, cy:33.00, rlon:0.08, rlat:0.05 },
+];
+
+// ── Canvas & state ─────────────────────────────────────────────────────────
+const cvs = document.getElementById('cvs');
+const ctx = cvs.getContext('2d');
+
+let paused=false, mode='normal', t=0, start=performance.now();
+
+document.getElementById('btPlay').onclick=()=>{
+  paused=!paused;
+  document.getElementById('btPlay').textContent=paused?'继续':'暂停';
+  if(!paused){ start=performance.now()-t*1000; raf(); }
+};
+document.getElementById('btReplay').onclick=()=>{ start=performance.now(); t=0; raf(); };
+document.getElementById('selMode').onchange=e=>{ mode=e.target.value; start=performance.now(); t=0; raf(); };
+
+// ── Drawing utilities ──────────────────────────────────────────────────────
+function lerp(a,b,p){return a+(b-a)*p;}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+
+function polyPts(latlonArr){
+  return latlonArr.map(p=>G(p[0],p[1]));
+}
+function strokePoly(pts,lw,color){
+  ctx.save(); ctx.strokeStyle=color; ctx.lineWidth=lw; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+  pts.slice(1).forEach(p=>ctx.lineTo(p.x,p.y));
+  ctx.stroke(); ctx.restore();
+}
+
+function pathPoint(pts,prog){
+  if(prog<=0) return pts[0];
+  if(prog>=1) return pts[pts.length-1];
+  const lens=[]; let tot=0;
+  for(let i=0;i<pts.length-1;i++){
+    const l=Math.hypot(pts[i+1].x-pts[i].x,pts[i+1].y-pts[i].y);
+    lens.push(l); tot+=l;
+  }
+  let d=tot*prog;
+  for(let i=0;i<lens.length;i++){
+    if(d<=lens[i]){
+      const f=d/lens[i];
+      return {x:lerp(pts[i].x,pts[i+1].x,f),y:lerp(pts[i].y,pts[i+1].y,f)};
+    }
+    d-=lens[i];
+  }
+  return pts[pts.length-1];
+}
+
+function txt(s,x,y,sz,color,align='left',bold=false){
+  ctx.save();
+  ctx.fillStyle=color;
+  ctx.font=`${bold?'700':'500'} ${sz}px "PingFang SC","Microsoft YaHei",sans-serif`;
+  ctx.textAlign=align; ctx.textBaseline='middle';
+  ctx.fillText(s,x,y);
+  ctx.restore();
+}
+
+function txtShadow(s,x,y,sz,color,align='left'){
+  ctx.save();
+  ctx.fillStyle='rgba(255,255,255,0.8)';
+  ctx.font=`600 ${sz}px "PingFang SC","Microsoft YaHei",sans-serif`;
+  ctx.textAlign=align; ctx.textBaseline='middle';
+  ctx.fillText(s,x+1,y+1);
+  ctx.fillStyle=color;
+  ctx.fillText(s,x,y);
+  ctx.restore();
+}
+
+// ── Background: terrain + grid ─────────────────────────────────────────────
+function drawBackground(){
+  // Sky/terrain gradient
+  const bg=ctx.createLinearGradient(0,0,0,CH);
+  bg.addColorStop(0,'#f0ead8');
+  bg.addColorStop(0.5,'#ede5cc');
+  bg.addColorStop(1,'#e8dfc5');
+  ctx.fillStyle=bg; ctx.fillRect(0,0,CW,CH);
+
+  // Nanyang Basin gentle green tint
+  const bp=G(112.05,32.72);
+  const basGrad=ctx.createRadialGradient(bp.x,bp.y,0,bp.x,bp.y,280);
+  basGrad.addColorStop(0,'rgba(140,200,100,0.10)');
+  basGrad.addColorStop(1,'rgba(140,200,100,0.00)');
+  ctx.fillStyle=basGrad;
+  ctx.beginPath(); ctx.ellipse(bp.x,bp.y,310,200,0,0,Math.PI*2); ctx.fill();
+
+  // Geo grid (0.2° intervals)
+  ctx.save(); ctx.strokeStyle='rgba(160,130,70,0.10)'; ctx.lineWidth=0.6; ctx.setLineDash([3,6]);
+  for(let lon=111.6;lon<=112.7;lon+=0.2){
+    const x=gx(lon);
+    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,CH); ctx.stroke();
+    txt((lon.toFixed(1))+'°E',x+2,CH-10,9,'rgba(140,110,60,0.55)');
+  }
+  for(let lat=32.3;lat<=33.05;lat+=0.2){
+    const y=gy(lat);
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(CW,y); ctx.stroke();
+    txt((lat.toFixed(1))+'°N',2,y-6,9,'rgba(140,110,60,0.55)');
+  }
+  ctx.setLineDash([]); ctx.restore();
+
+  // Mountains (western)
+  MOUNTS.forEach(m=>{
+    const c=G(m.cx,m.cy);
+    const rx=(m.rlon/(LON1-LON0))*CW;
+    const ry=(m.rlat/(LAT0-LAT1))*CH;
+    const mg=ctx.createRadialGradient(c.x,c.y,0,c.x,c.y,Math.max(rx,ry));
+    mg.addColorStop(0,'rgba(130,105,60,0.35)');
+    mg.addColorStop(1,'rgba(130,105,60,0.00)');
+    ctx.fillStyle=mg;
+    ctx.beginPath(); ctx.ellipse(c.x,c.y,rx,ry,0,0,Math.PI*2); ctx.fill();
+    txtShadow(m.name,c.x,c.y,11,'rgba(100,78,30,0.80)','center');
+  });
+
+  // "南阳盆地" label
+  const nb=G(112.18,32.65);
+  ctx.save();
+  ctx.fillStyle='rgba(80,120,50,0.18)';
+  ctx.beginPath(); ctx.ellipse(nb.x,nb.y,200,140,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+  txt('南 阳 盆 地',nb.x,nb.y+70,13,'rgba(60,90,40,0.45)','center');
+}
+
+// ── Tuan River ─────────────────────────────────────────────────────────────
+function drawTuanHe(){
+  const pts=polyPts(TUANHE);
+  // Banks
+  strokePoly(pts,22,'#c8973d');
+  // Water
+  strokePoly(pts,13,'#3b8fd4');
+  // Flow highlights
+  ctx.save();
+  for(let i=0;i<10;i++){
+    const base=((t*0.09+i/10)%1);
+    const p=pathPoint(pts,base);
+    ctx.fillStyle='rgba(255,255,255,0.50)';
+    ctx.beginPath(); ctx.ellipse(p.x,p.y,9,3,Math.PI*0.15,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+  // Label
+  const mp=pathPoint(pts,0.25);
+  txtShadow('湍　水',mp.x-30,mp.y-18,13,'#1a5c8a');
+  txt('（湍河）',mp.x-20,mp.y-5,10,'#3a7ab0');
+}
+
+// ── Six Gates Dike ─────────────────────────────────────────────────────────
+function drawDike(gateOpen){
+  const dp=G(DIKE_LON,DIKE_LAT);
+
+  // Dike body (perpendicular bar across river)
+  ctx.save();
+  ctx.fillStyle='#9a6d2c';
+  ctx.fillRect(dp.x-8,dp.y-28,16,56);
+  ctx.fillStyle='#b8842e';
+  ctx.fillRect(dp.x-5,dp.y-28,6,56);
+  ctx.restore();
+
+  // 6 gates
+  const gate_y = dp.y-14;
+  for(let i=0;i<6;i++){
+    const gx2 = dp.x - 20 + i*8;
+    // gate leaf (slides up when open)
+    const lift = gateOpen * 12;
+    ctx.save();
+    ctx.fillStyle='#6b7885';
+    ctx.fillRect(gx2-2,gate_y-8+lift,4,20-lift);
+    ctx.restore();
+    // water jet through open gate
+    if(gateOpen>0.05){
+      ctx.save();
+      ctx.strokeStyle=`rgba(59,143,212,${0.6+gateOpen*0.3})`;
+      ctx.lineWidth=2+gateOpen*2;
+      ctx.beginPath();
+      ctx.moveTo(gx2,gate_y+5);
+      ctx.lineTo(gx2+gateOpen*25,gate_y+5+(i-2.5)*0.5);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // Label
+  txtShadow('六门堤',dp.x,dp.y-42,15,'#5c3008','center');
+  txt('(彭桥镇一带)',dp.x,dp.y-28,10,'#8a6030','center');
+  txt('六门石闸',dp.x,dp.y+38,12,'#334155','center');
+
+  // Upstream water level rises
+  const rise=gateOpen<0.5 ? lerp(14,28,gateOpen/0.5) : 28;
+  const tuanPts=polyPts(TUANHE);
+  const upPt=pathPoint(tuanPts,0.20);
+  ctx.save();
+  ctx.fillStyle='rgba(59,143,212,0.18)';
+  ctx.fillRect(upPt.x-60,upPt.y-rise/2,120,rise);
+  ctx.restore();
+}
+
+// ── Particle flow helper ───────────────────────────────────────────────────
+function flowParticles(latlonArr,count,speed,grow,color,offset=0){
+  if(grow<=0) return;
+  const pts=polyPts(latlonArr);
+  ctx.save();
+  for(let i=0;i<count;i++){
+    const base=((t*speed+offset+i/count)%1);
+    const prog=clamp(base*grow,0,1);
+    const p=pathPoint(pts,prog);
+    ctx.fillStyle=color;
+    ctx.globalAlpha=0.30+0.55*grow;
+    ctx.beginPath(); ctx.ellipse(p.x,p.y,8,3,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha=1; ctx.restore();
+}
+
+// ── Canals ─────────────────────────────────────────────────────────────────
+function drawCanals(progress,waterStr){
+  const mainGrow  = clamp((progress-0.14)/0.20,0,1);
+  const nGrow     = clamp((progress-0.40)/0.18,0,1);
+  const sGrow     = clamp((progress-0.50)/0.18,0,1);
+  const nwGrow    = clamp((progress-0.34)/0.18,0,1);
+
+  // Draw canal bed then water
+  [[CANAL_MAIN,24,'#c8973d',14,'#5aafee'],
+   [CANAL_N,20,'#c8973d',11,'#5aafee'],
+   [CANAL_S,20,'#c8973d',11,'#5aafee'],
+   [CANAL_NW,16,'#c8973d',9,'#5aafee']
+  ].forEach(([pts,bw,bc,ww,wc])=>{
+    strokePoly(polyPts(pts),bw,bc);
+    strokePoly(polyPts(pts),ww,wc);
+  });
+
+  // Labels
+  const mMid=pathPoint(polyPts(CANAL_MAIN),0.5);
+  txtShadow('主干渠',mMid.x,mMid.y-14,12,'#1a5c8a');
+  const nMid=pathPoint(polyPts(CANAL_N),0.5);
+  txtShadow('北支渠',nMid.x-10,nMid.y-12,11,'#1a5c8a');
+  const sMid=pathPoint(polyPts(CANAL_S),0.5);
+  txtShadow('南支渠',sMid.x+5,sMid.y+14,11,'#1a5c8a');
+  const nwMid=pathPoint(polyPts(CANAL_NW),0.5);
+  txtShadow('北冠军渠',nwMid.x-35,nwMid.y-12,10,'#1a5c8a');
+
+  // Particles
+  flowParticles(CANAL_MAIN,14,0.13*waterStr,mainGrow,'#bde0fa');
+  flowParticles(CANAL_N,   10,0.11*waterStr,nGrow,  '#bde0fa',0.15);
+  flowParticles(CANAL_S,   10,0.10*waterStr,sGrow,  '#bde0fa',0.30);
+  flowParticles(CANAL_NW,  8, 0.09*waterStr,nwGrow, '#bde0fa',0.45);
+}
+
+// ── Flood spill ────────────────────────────────────────────────────────────
+function drawFloodSpill(progress){
+  if(mode!=='flood') return;
+  const g=clamp((progress-0.18)/0.20,0,1);
+  if(g<=0) return;
+  strokePoly(polyPts(FLOOD_SPILL),20,'#c8973d');
+  strokePoly(polyPts(FLOOD_SPILL),11,'#ef6a4a');
+  flowParticles(FLOOD_SPILL,10,0.14,g,'#ffc8b8',0.5);
+  const ep=polyPts(FLOOD_SPILL);
+  const lp=ep[ep.length-1];
+  txtShadow('分洪泄水',lp.x-50,lp.y-16,12,'#b91c1c');
+}
+
+// ── Detention ponds (陂堰) ──────────────────────────────────────────────────
+function drawPonds(progress){
+  PONDS.forEach((pd,i)=>{
+    const p=G(pd.lon,pd.lat);
+    const fillP=clamp((progress-(0.44+i*0.06))/0.16,0,1);
+    ctx.save();
+    ctx.strokeStyle='#2a6ca8'; ctx.lineWidth=1.5;
+    ctx.fillStyle='rgba(59,143,212,0.60)';
+    ctx.beginPath(); ctx.arc(p.x,p.y,14,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    // fill animation
+    ctx.beginPath(); ctx.arc(p.x,p.y,11,0,Math.PI*2); ctx.clip();
+    ctx.fillStyle=`rgba(191,225,254,${0.3+fillP*0.55})`;
+    ctx.fillRect(p.x-12,p.y+12-fillP*24,24,24);
+    ctx.restore();
+    if(i===0) txtShadow('陂堰',p.x,p.y-20,10,'#1a5c8a','center');
+  });
+}
+
+// ── Cities ─────────────────────────────────────────────────────────────────
+function drawCities(){
+  CITIES.forEach(c=>{
+    const p=G(c.lon,c.lat);
+    ctx.save();
+    if(c.major){
+      ctx.fillStyle='#d9c3a3';
+      ctx.strokeStyle='#a87c40';
+      ctx.lineWidth=1.5;
+      ctx.beginPath();
+      ctx.rect(p.x-16,p.y-12,32,24);
+      ctx.fill(); ctx.stroke();
+      // inner walls
+      ctx.strokeStyle='#c0a060'; ctx.lineWidth=0.7;
+      ctx.strokeRect(p.x-12,p.y-8,24,16);
+    } else {
+      ctx.fillStyle='#e0cfa8';
+      ctx.strokeStyle='#a87c40';
+      ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(p.x,p.y,7,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+    txtShadow(c.name,p.x,p.y-(c.major?22:18),c.major?14:11,'#4a2800','center');
+    txt(c.sub,p.x,p.y+(c.major?28:20),9,'rgba(100,70,20,0.80)','center');
+  });
+}
+
+// ── Fields ─────────────────────────────────────────────────────────────────
+function drawFields(progress){
+  FIELDS.forEach(f=>{
+    const p=G(f.cx,f.cy);
+    const rx=(f.rlon/(LON1-LON0))*CW;
+    const ry=(f.rlat/(LAT0-LAT1))*CH;
+    const wet0=[0.58,0.65,0.72,0.68,0.55][f.idx];
+    const wetBase=clamp((progress-wet0)/0.18,0,1);
+    const wet=mode==='dry'?wetBase*0.70 : mode==='flood'?Math.min(1,wetBase*1.15) : wetBase;
+    ctx.save();
+    ctx.fillStyle=`rgba(127,192,90,${0.25+wet*0.50})`;
+    ctx.strokeStyle='#6a9c48'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.ellipse(p.x,p.y,rx,ry,0,0,Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    // Row lines
+    ctx.strokeStyle='rgba(70,110,45,0.25)'; ctx.lineWidth=0.8;
+    for(let dy=-ry+10;dy<ry;dy+=12){
+      ctx.save(); ctx.beginPath(); ctx.ellipse(p.x,p.y,rx,ry,0,0,Math.PI*2); ctx.clip();
+      ctx.beginPath(); ctx.moveTo(p.x-rx,p.y+dy); ctx.lineTo(p.x+rx,p.y+dy); ctx.stroke();
+      ctx.restore();
+    }
+    // Wet shimmer
+    if(wet>0.05){
+      ctx.save(); ctx.beginPath(); ctx.ellipse(p.x,p.y,rx,ry,0,0,Math.PI*2); ctx.clip();
+      ctx.fillStyle=`rgba(255,255,255,${0.06+wet*0.14})`;
+      for(let i=0;i<4;i++){
+        const sx=p.x-rx+((t*15+i*25)%(rx*2));
+        const sy=p.y-ry+i*16;
+        ctx.fillRect(sx,sy,20,3);
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+    if(wet>0.1) txtShadow(f.label,p.x,p.y,11,'#255022','center');
+  });
+}
+
+// ── Stage annotation box ───────────────────────────────────────────────────
+function drawAnnotation(progress){
+  let title='阶段：拦河抬水', lines=[
+    '在湍水上筑堤抬高水位，',
+    '蓄势待引，水面高出灌区地面。'
+  ];
+  if(progress>=0.14&&progress<0.34){
+    title='阶段：六门开闸分流';
+    lines=['六个石闸依次开启，','将湍水精确引入主干渠。'];
+  } else if(progress>=0.34&&progress<0.50){
+    title='阶段：主干渠输水';
+    lines=['水沿干渠流至穰县城附近，','再向北（涅阳）、南（新野）分流。'];
+  } else if(progress>=0.50&&progress<0.68){
+    title='阶段：陂堰蓄调';
+    lines=['沿途陂堰暂存水量，','削峰补枯，稳定渠道水位。'];
+  } else if(progress>=0.68){
+    title='阶段：支渠灌田';
+    lines=['水入穰、涅阳、山都、新野灌区，','"穰、新野最为膏腴"（《汉书》）。'];
+  }
+  if(mode==='flood'&&progress>0.20){
+    title='丰水期：分洪 + 灌溉并行';
+    lines=['部分洪水由分洪渠泄走，','其余水量经闸门受控灌田。'];
+  }
+  if(mode==='dry'&&progress>0.35){
+    title='枯水期：收窄闸门保灌';
+    lines=['减小开闸幅度，优先保住','穰县与新野主要灌区基本需求。'];
+  }
+  document.getElementById('stageLabel').textContent=title;
+
+  const bx=18,by=CH-130,bw=320,bh=112;
+  ctx.save();
+  ctx.fillStyle='rgba(255,252,242,0.90)';
+  ctx.strokeStyle='rgba(0,0,0,0.10)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.roundRect(bx,by,bw,bh,12); ctx.fill(); ctx.stroke();
+  ctx.restore();
+  txt(title,bx+14,by+22,15,'#1a1208',undefined,true);
+  txt(lines[0],bx+14,by+55,13,'#334155');
+  txt(lines[1],bx+14,by+80,13,'#334155');
+
+  // Historical source
+  txt('史料：《汉书·召信臣传》元始中（约前20年）',bx+14,by+104,10,'#9a7040');
+}
+
+// ── Compass + scale ─────────────────────────────────────────────────────────
+function drawCompassScale(){
+  const cx=CW-45,cy=55,r=22;
+  ctx.save();
+  ctx.fillStyle='rgba(255,252,240,0.85)';
+  ctx.strokeStyle='rgba(0,0,0,0.12)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.arc(cx,cy,r+6,0,Math.PI*2); ctx.fill(); ctx.stroke();
+  ['N','E','S','W'].forEach((d,i)=>{
+    const a=i*Math.PI/2-Math.PI/2;
+    const tx=cx+Math.cos(a)*r, ty=cy+Math.sin(a)*r;
+    ctx.fillStyle=d==='N'?'#cc2200':'#5a4020';
+    ctx.font=`700 ${d==='N'?12:10}px sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(d==='N'?'北':d==='E'?'东':d==='S'?'南':'西',tx,ty);
+  });
+  ctx.restore();
+
+  // 10km scale bar
+  const km10lon=10/111; // ~0.09° lon per 10km
+  const barPx=(km10lon/(LON1-LON0))*CW;
+  const sx=CW-160, sy=CH-20;
+  ctx.save();
+  ctx.strokeStyle='#5a4020'; ctx.lineWidth=2.5;
+  ctx.beginPath(); ctx.moveTo(sx,sy); ctx.lineTo(sx+barPx,sy);
+  ctx.moveTo(sx,sy-4); ctx.lineTo(sx,sy+4);
+  ctx.moveTo(sx+barPx,sy-4); ctx.lineTo(sx+barPx,sy+4);
+  ctx.stroke();
+  txt('10 km',sx+barPx/2,sy-12,10,'#5a4020','center');
+  ctx.restore();
+}
+
+// ── Gate open factor ───────────────────────────────────────────────────────
+function getGateOpen(progress){
+  if(mode==='flood'){
+    if(progress<0.14) return clamp(progress/0.14,0,1)*0.85;
+    if(progress<0.60) return 0.95;
+    return 0.80;
+  }
+  if(mode==='dry'){
+    if(progress<0.12) return clamp(progress/0.12,0,1)*0.30;
+    return 0.30;
+  }
+  if(progress<0.14) return clamp(progress/0.14,0,1)*0.60;
+  return 0.62;
+}
+
+// ── Main render ────────────────────────────────────────────────────────────
+function draw(progress){
+  ctx.clearRect(0,0,CW,CH);
+  const waterStr = mode==='flood'?1.4 : mode==='dry'?0.55 : 1.0;
+  const gateOpen = getGateOpen(progress);
+
+  drawBackground();
+  drawTuanHe();
+  drawCanals(progress,waterStr);
+  drawFloodSpill(progress);
+  drawPonds(progress);
+  drawDike(gateOpen);
+  drawFields(progress);
+  drawCities();
+  drawAnnotation(progress);
+  drawCompassScale();
+}
+
+function raf(){
+  if(!paused) requestAnimationFrame(loop);
+}
+function loop(now){
+  if(paused) return;
+  t=(now-start)/1000;
+  const cycle=22;
+  draw((t%cycle)/cycle);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+// Touch swipe to change mode
+let tx0=null;
+cvs.addEventListener('touchstart',e=>{tx0=e.touches[0].clientX;},{passive:true});
+cvs.addEventListener('touchend',e=>{
+  if(tx0===null) return;
+  const dx=e.changedTouches[0].clientX-tx0;
+  if(Math.abs(dx)>50){
+    const modes=['normal','flood','dry'];
+    const sel=document.getElementById('selMode');
+    let idx=modes.indexOf(mode)+(dx<0?1:-1);
+    idx=(idx+modes.length)%modes.length;
+    sel.value=modes[idx];
+    sel.onchange({target:sel});
+  }
+  tx0=null;
+});
+</script>
+</body>
+</html>
